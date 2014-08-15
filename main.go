@@ -5,6 +5,8 @@ import (
     "flag"
     "log"
     "./bot"
+    "os"
+    "os/signal"
 )
 
 func main() {
@@ -19,14 +21,31 @@ func main() {
         return
     }
 
-    bot, err := bot.NewBot(*user, *pass)
+    b, err := bot.NewBot(*user, *pass)
     if err != nil {
         log.Fatal(err)
     }
 
-    room, roomchan := bot.Join(*roomId)
+    handleControlC(b);
+    b.Dunno = func(room *bot.Room) {
+        b.Say(room, "I dunno who you are :(")
+    }
+
+    room, roomchan := b.Join(*roomId)
 
     for msg := range roomchan {
-        bot.Say(room, "Hello #" + msg.From)
+        b.Say(room, "Hello @" + msg.From.MentionName)
     }
+}
+
+func handleControlC(bot *bot.Bot) {
+    c := make(chan os.Signal, 1)
+    signal.Notify(c, os.Interrupt)
+    go func(){
+        for _ = range c {
+            log.Println("Disconnecting")
+            bot.Disconnect();
+            os.Exit(0)
+        }
+    }()
 }

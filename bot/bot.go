@@ -17,14 +17,20 @@ const (
 // TODO enum for status
 
 type Bot struct {
-	FullName        string
-    MentionName     string
+	UserInfo   *UserInfo
+    Dunno      func(*Room)
 
-    client          *hipchat.Client
+    client     *hipchat.Client
+}
+
+type UserInfo struct {
+    Id          string
+    FullName    string
+    MentionName string
 }
 
 type Message struct {
-    From    string
+    From    *UserInfo
     Body    string
 }
 
@@ -55,7 +61,7 @@ func (b *Bot) Join(roomId string) (*Room, <-chan *Message) { // TODO add callbac
 
 	roomJid := fmt.Sprintf("%s@%s", roomId, conf)
 
-    b.client.Join(roomJid, b.FullName)
+    b.client.Join(roomJid, b.UserInfo.FullName)
 
     room := &Room {
         roomJid: roomJid,
@@ -64,10 +70,15 @@ func (b *Bot) Join(roomId string) (*Room, <-chan *Message) { // TODO add callbac
 
     go func() {
         for message := range b.client.Messages() {
-            if strings.HasPrefix(message.Body, "@"+b.MentionName) {
+            if strings.HasPrefix(message.Body, "@"+b.UserInfo.MentionName) {
+                userInfo := b.GetUserInfo(strings.Split(message.From, "/")[1])
+                if userInfo == nil {
+                    b.dunno(room)
+                    continue
+                }
                 m := &Message {
-                    From: message.From,
-                    Body: message.Body[len(b.MentionName):],
+                    From: userInfo,
+                    Body: message.Body[len(b.UserInfo.MentionName):],
                 }
                 receivedChan <- m
             }
@@ -78,16 +89,44 @@ func (b *Bot) Join(roomId string) (*Room, <-chan *Message) { // TODO add callbac
 }
 
 func (b *Bot) Say(room *Room, msg string) {
-    b.client.Say(room.roomJid, b.FullName, msg)
+    log.Printf(`Saying: "%s" @ %#v`, msg, room)
+    b.client.Say(room.roomJid, b.UserInfo.FullName, msg)
+}
+
+func (b *Bot) Disconnect() {
+    log.Println("Disconnecting")
+    b.client.Status("unavailable")
+}
+
+func (b *Bot) GetUserInfo(idToken string) (*UserInfo) {
+    for _, user := range b.client.Users() {
+        if user.Id == idToken || user.Name == idToken || user.MentionName == idToken {
+            return &UserInfo {
+                Id: user.Id,
+                FullName: user.Name,
+                MentionName: user.MentionName}
+        }
+    }
+
+    return nil
 }
 
 func (b *Bot) init() (error) {
-	for _, user := range b.client.Users() {
-		if user.Id == b.client.Id {
-			b.FullName = user.Name
-			b.MentionName = user.MentionName
-			return nil
-		}
-	}
-	return errors.New("Couldn't initialise the bot")
+    go b.client.KeepAlive()
+
+    botInfo := b.GetUserInfo(b.client.Id)
+	
+    if botInfo != nil {
+        b.UserInfo = botInfo
+        return nil
+    } else {
+	   return errors.New("Couldn't initialise the bot")
+    }
+}
+
+func (b *Bot) dunno(room *Room) {
+    log.Println("dunno()")
+    if b.Dunno != nil {
+        b.Dunno(room)
+    }
 }
