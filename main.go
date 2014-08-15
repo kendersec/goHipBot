@@ -26,26 +26,27 @@ func main() {
         log.Fatal(err)
     }
 
-    handleControlC(b);
     b.Dunno = func(room *bot.Room) {
         b.Say(room, "I dunno who you are :(")
     }
 
-    room, roomchan := b.Join(*roomId)
+    r := b.Join(*roomId)
+    err = r.AttachPlugin(new(bot.HelloPlugin))
 
-    for msg := range roomchan {
-        b.Say(room, "Hello @" + msg.From.MentionName)
+    if err != nil {
+        log.Fatal(err)
     }
+
+    handleControlC(b)
 }
 
 func handleControlC(bot *bot.Bot) {
     c := make(chan os.Signal, 1)
     signal.Notify(c, os.Interrupt)
-    go func(){
-        for _ = range c {
-            log.Println("Disconnecting")
-            bot.Disconnect();
-            os.Exit(0)
-        }
-    }()
+
+    for _ = range c {
+        log.Println("Disconnecting")
+        bot.Disconnect()
+        os.Exit(0)
+    }
 }
